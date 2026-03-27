@@ -2,12 +2,16 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
 <title>RETRO GRAND PRIX</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { background:#000; display:flex; justify-content:center; align-items:center; height:100vh; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
-canvas { image-rendering:pixelated; border:2px solid #444; max-width:100vw; max-height:100vh; touch-action:none; }
+html, body { width:100%; height:100%; overflow:hidden; }
+body { background:#000; display:flex; justify-content:center; align-items:center; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+canvas { image-rendering:pixelated; border:none; touch-action:none; }
 </style>
 </head>
 <body>
@@ -17,6 +21,27 @@ canvas { image-rendering:pixelated; border:2px solid #444; max-width:100vw; max-
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const W = 640, H = 480;
+
+// ===== FULLSCREEN RESIZE =====
+function resizeCanvas() {
+  const windowW = window.innerWidth;
+  const windowH = window.innerHeight;
+  const scale = Math.min(windowW / W, windowH / H);
+  canvas.style.width = Math.floor(W * scale) + "px";
+  canvas.style.height = Math.floor(H * scale) + "px";
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+window.addEventListener("orientationchange", () => setTimeout(resizeCanvas, 100));
+
+// Fullscreen on first touch (mobile)
+let fullscreenRequested = false;
+document.addEventListener("touchstart", function goFullscreen() {
+  if (!fullscreenRequested && document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+    fullscreenRequested = true;
+  }
+}, { once: true });
 
 // ===== INPUT =====
 const keys = {};
