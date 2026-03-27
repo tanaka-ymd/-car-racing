@@ -9,9 +9,9 @@
 <title>RETRO GRAND PRIX</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { width:100%; height:100%; overflow:hidden; }
-body { background:#000; display:flex; justify-content:center; align-items:center; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
-canvas { image-rendering:pixelated; border:none; touch-action:none; }
+html { height:100%; }
+body { margin:0; padding:0; width:100%; height:100%; min-height:100vh; min-height:-webkit-fill-available; overflow:hidden; background:#000; display:flex; justify-content:center; align-items:center; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+canvas { image-rendering:pixelated; border:none; touch-action:none; display:block; }
 </style>
 </head>
 <body>
@@ -22,14 +22,21 @@ const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
 // ===== DYNAMIC SIZING =====
-// スマホ縦向き: 画面比率に合わせてCanvas解像度を変更
+function getScreenSize() {
+  // visualViewportが最も正確（Safari対応）
+  if (window.visualViewport) {
+    return { w: window.visualViewport.width, h: window.visualViewport.height };
+  }
+  return { w: window.innerWidth, h: window.innerHeight };
+}
+
 function calcSize() {
-  const ratio = window.innerHeight / window.innerWidth;
+  const screen = getScreenSize();
+  const ratio = screen.h / screen.w;
   if (ratio > 1.2) {
-    // 縦長（スマホ縦向き）: 幅を基準に高さを画面比率に合わせる
     return { w: 400, h: Math.floor(400 * ratio) };
   }
-  return { w: 640, h: 480 }; // PC / 横向き
+  return { w: 640, h: 480 };
 }
 const size = calcSize();
 let W = size.w, H = size.h;
@@ -37,14 +44,16 @@ canvas.width = W;
 canvas.height = H;
 
 function resizeCanvas() {
-  const windowW = window.innerWidth;
-  const windowH = window.innerHeight;
-  canvas.style.width = windowW + "px";
-  canvas.style.height = windowH + "px";
+  const screen = getScreenSize();
+  canvas.style.width = screen.w + "px";
+  canvas.style.height = screen.h + "px";
 }
 resizeCanvas();
 window.addEventListener("resize", resizeCanvas);
-window.addEventListener("orientationchange", () => setTimeout(resizeCanvas, 100));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", resizeCanvas);
+}
+window.addEventListener("orientationchange", () => setTimeout(resizeCanvas, 200));
 
 // Fullscreen on first touch (mobile)
 let fullscreenRequested = false;
