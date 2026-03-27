@@ -20,15 +20,27 @@ canvas { image-rendering:pixelated; border:none; touch-action:none; }
 "use strict";
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-const W = 640, H = 480;
 
-// ===== FULLSCREEN RESIZE =====
+// ===== DYNAMIC SIZING =====
+// スマホ縦向き: 画面比率に合わせてCanvas解像度を変更
+function calcSize() {
+  const ratio = window.innerHeight / window.innerWidth;
+  if (ratio > 1.2) {
+    // 縦長（スマホ縦向き）: 幅を基準に高さを画面比率に合わせる
+    return { w: 400, h: Math.floor(400 * ratio) };
+  }
+  return { w: 640, h: 480 }; // PC / 横向き
+}
+const size = calcSize();
+let W = size.w, H = size.h;
+canvas.width = W;
+canvas.height = H;
+
 function resizeCanvas() {
   const windowW = window.innerWidth;
   const windowH = window.innerHeight;
-  const scale = Math.min(windowW / W, windowH / H);
-  canvas.style.width = Math.floor(W * scale) + "px";
-  canvas.style.height = Math.floor(H * scale) + "px";
+  canvas.style.width = windowW + "px";
+  canvas.style.height = windowH + "px";
 }
 resizeCanvas();
 window.addEventListener("resize", resizeCanvas);
@@ -58,13 +70,16 @@ canvas.addEventListener("click", () => {
 });
 
 // ===== TOUCH CONTROLS =====
-const touchButtons = {
-  left:  { x: 20,  y: H - 90, w: 70, h: 70, key: "ArrowLeft",  label: "\u25C0", active: false },
-  right: { x: 100, y: H - 90, w: 70, h: 70, key: "ArrowRight", label: "\u25B6", active: false },
-  accel: { x: W - 90, y: H - 160, w: 70, h: 70, key: "ArrowUp",   label: "\u25B2", active: false },
-  brake: { x: W - 90, y: H - 80,  w: 70, h: 70, key: "ArrowDown", label: "\u25BC", active: false },
-  item:  { x: W/2 - 40, y: H - 90, w: 80, h: 60, key: "Space",    label: "ITEM", active: false }
-};
+function makeTouchButtons() {
+  return {
+    left:  { x: 20,  y: H - 90, w: 70, h: 70, key: "ArrowLeft",  label: "\u25C0", active: false },
+    right: { x: 100, y: H - 90, w: 70, h: 70, key: "ArrowRight", label: "\u25B6", active: false },
+    accel: { x: W - 90, y: H - 160, w: 70, h: 70, key: "ArrowUp",   label: "\u25B2", active: false },
+    brake: { x: W - 90, y: H - 80,  w: 70, h: 70, key: "ArrowDown", label: "\u25BC", active: false },
+    item:  { x: W/2 - 40, y: H - 90, w: 80, h: 60, key: "Space",    label: "ITEM", active: false }
+  };
+}
+let touchButtons = makeTouchButtons();
 
 let isTouchDevice = false;
 let activeTouches = {};
