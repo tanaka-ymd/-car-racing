@@ -66,11 +66,28 @@ document.addEventListener("touchstart", function goFullscreen() {
 
 // ===== INPUT =====
 const keys = {};
+const keys2 = {}; // P2 keys
 canvas.tabIndex = 1;
 canvas.focus();
 canvas.addEventListener("click", () => canvas.focus());
-window.addEventListener("keydown", e => { keys[e.code] = true; e.preventDefault(); });
-window.addEventListener("keyup", e => { keys[e.code] = false; });
+window.addEventListener("keydown", e => {
+  keys[e.code] = true;
+  // P2 WASD+E mapping
+  if (e.code === "KeyA") keys2["left"] = true;
+  if (e.code === "KeyD") keys2["right"] = true;
+  if (e.code === "KeyW") keys2["up"] = true;
+  if (e.code === "KeyS") keys2["down"] = true;
+  if (e.code === "KeyE") keys2["item"] = true;
+  e.preventDefault();
+});
+window.addEventListener("keyup", e => {
+  keys[e.code] = false;
+  if (e.code === "KeyA") keys2["left"] = false;
+  if (e.code === "KeyD") keys2["right"] = false;
+  if (e.code === "KeyW") keys2["up"] = false;
+  if (e.code === "KeyS") keys2["down"] = false;
+  if (e.code === "KeyE") keys2["item"] = false;
+});
 let enterPressed = false;
 window.addEventListener("keydown", e => { if (e.code === "Enter") enterPressed = true; });
 // Click/tap also acts as Enter on title/result screens
@@ -88,7 +105,20 @@ function makeTouchButtons() {
     item:  { x: W/2 - 40, y: H - 90, w: 80, h: 60, key: "Space",    label: "ITEM", active: false }
   };
 }
+
+// P2 touch buttons (top half, mirrored layout)
+function makeTouchButtons2() {
+  return {
+    left:  { x: W - 100 - 70, y: 20,  w: 70, h: 70, label: "\u25B6", active: false },
+    right: { x: W - 20 - 70,  y: 20,  w: 70, h: 70, label: "\u25C0", active: false },
+    accel: { x: 20,  y: 20,  w: 70, h: 70, label: "\u25BC", active: false },
+    brake: { x: 20,  y: 100, w: 70, h: 70, label: "\u25B2", active: false },
+    item:  { x: W/2 - 40, y: 20, w: 80, h: 60, label: "ITEM", active: false }
+  };
+}
+
 let touchButtons = makeTouchButtons();
+let touchButtons2 = makeTouchButtons2();
 
 let isTouchDevice = false;
 let activeTouches = {};
@@ -104,10 +134,34 @@ function canvasCoords(touch) {
 }
 
 function hitTestButton(cx, cy) {
+  // In 2P mode, check which half the touch is in
+  if (settings.mode === 2) {
+    const halfH = H / 2;
+    if (cy < halfH) {
+      // P2 area (top half)
+      for (const name in touchButtons2) {
+        const b = touchButtons2[name];
+        if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+          return { player: 2, button: name };
+        }
+      }
+      return null;
+    } else {
+      // P1 area (bottom half)
+      for (const name in touchButtons) {
+        const b = touchButtons[name];
+        if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+          return { player: 1, button: name };
+        }
+      }
+      return null;
+    }
+  }
+  // Normal mode
   for (const name in touchButtons) {
     const b = touchButtons[name];
     if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
-      return name;
+      return { player: 1, button: name };
     }
   }
   return null;
@@ -115,22 +169,38 @@ function hitTestButton(cx, cy) {
 
 function updateTouchKeys() {
   // Reset all touch buttons
-  for (const name in touchButtons) {
-    touchButtons[name].active = false;
+  for (const name in touchButtons) touchButtons[name].active = false;
+  if (settings.mode === 2) {
+    for (const name in touchButtons2) touchButtons2[name].active = false;
   }
   // Check all active touches
   for (const id in activeTouches) {
     const t = activeTouches[id];
-    const btn = hitTestButton(t.x, t.y);
-    if (btn) {
-      touchButtons[btn].active = true;
+    const result = hitTestButton(t.x, t.y);
+    if (result) {
+      if (result.player === 1) {
+        touchButtons[result.button].active = true;
+      } else if (result.player === 2) {
+        touchButtons2[result.button].active = true;
+      }
     }
   }
   // Update keys from touch state (only for game scene)
   if (scene === "game") {
-    for (const name in touchButtons) {
-      const b = touchButtons[name];
-      keys[b.key] = b.active || (keys[b.key] && !isTouchDevice);
+    // P1 keys
+    keys["ArrowLeft"] = touchButtons.left.active || (keys["ArrowLeft"] && !isTouchDevice);
+    keys["ArrowRight"] = touchButtons.right.active || (keys["ArrowRight"] && !isTouchDevice);
+    keys["ArrowUp"] = touchButtons.accel.active || (keys["ArrowUp"] && !isTouchDevice);
+    keys["ArrowDown"] = touchButtons.brake.active || (keys["ArrowDown"] && !isTouchDevice);
+    keys["Space"] = touchButtons.item.active || (keys["Space"] && !isTouchDevice);
+
+    // P2 keys (2P mode touch)
+    if (settings.mode === 2) {
+      keys2["left"] = touchButtons2.left.active || (keys2["left"] && !isTouchDevice);
+      keys2["right"] = touchButtons2.right.active || (keys2["right"] && !isTouchDevice);
+      keys2["up"] = touchButtons2.accel.active || (keys2["up"] && !isTouchDevice);
+      keys2["down"] = touchButtons2.down ? touchButtons2.down.active : touchButtons2.brake.active || (keys2["down"] && !isTouchDevice);
+      keys2["item"] = touchButtons2.item.active || (keys2["item"] && !isTouchDevice);
     }
   }
 }
@@ -142,17 +212,18 @@ function handleSettingsTouch(cx, cy) {
     { y: 250, h: 80 }, // COURSE
     { y: 330, h: 80 }  // ITEMS
   ];
+  const modeCount = modeNames.length;
   // Check if tapped on a setting item
   for (let i = 0; i < items.length; i++) {
     if (cy >= items[i].y - 20 && cy < items[i].y + items[i].h - 20) {
       settingSel = i;
       // Left half = decrease, right half = increase
       if (cx < W / 2) {
-        if (i === 0) settings.mode = (settings.mode - 1 + 2) % 2;
+        if (i === 0) settings.mode = (settings.mode - 1 + modeCount) % modeCount;
         if (i === 1) settings.course = (settings.course - 1 + 3) % 3;
         if (i === 2) settings.items = 1 - settings.items;
       } else {
-        if (i === 0) settings.mode = (settings.mode + 1) % 2;
+        if (i === 0) settings.mode = (settings.mode + 1) % modeCount;
         if (i === 1) settings.course = (settings.course + 1) % 3;
         if (i === 2) settings.items = 1 - settings.items;
       }
@@ -201,14 +272,29 @@ canvas.addEventListener("touchend", e => {
     for (const name in touchButtons) {
       touchButtons[name].active = false;
     }
+    if (settings.mode === 2) {
+      for (const name in touchButtons2) {
+        touchButtons2[name].active = false;
+      }
+    }
     for (const id in activeTouches) {
       const t = activeTouches[id];
-      const btn = hitTestButton(t.x, t.y);
-      if (btn) touchButtons[btn].active = true;
+      const result = hitTestButton(t.x, t.y);
+      if (result) {
+        if (result.player === 1) touchButtons[result.button].active = true;
+        else if (result.player === 2) touchButtons2[result.button].active = true;
+      }
     }
     for (const name in touchButtons) {
       const b = touchButtons[name];
       if (!b.active) keys[b.key] = false;
+    }
+    if (settings.mode === 2) {
+      if (!touchButtons2.left.active) keys2["left"] = false;
+      if (!touchButtons2.right.active) keys2["right"] = false;
+      if (!touchButtons2.accel.active) keys2["up"] = false;
+      if (!touchButtons2.brake.active) keys2["down"] = false;
+      if (!touchButtons2.item.active) keys2["item"] = false;
     }
   }
 }, { passive: false });
@@ -223,14 +309,21 @@ canvas.addEventListener("touchcancel", e => {
       touchButtons[name].active = false;
       keys[touchButtons[name].key] = false;
     }
+    if (settings.mode === 2) {
+      for (const name in touchButtons2) {
+        touchButtons2[name].active = false;
+      }
+      keys2["left"] = false; keys2["right"] = false;
+      keys2["up"] = false; keys2["down"] = false;
+      keys2["item"] = false;
+    }
   }
 }, { passive: false });
 
-function drawTouchButtons() {
-  if (!isTouchDevice || scene !== "game") return;
+function drawTouchButtonSet(buttons, labelPrefix) {
   ctx.save();
-  for (const name in touchButtons) {
-    const b = touchButtons[name];
+  for (const name in buttons) {
+    const b = buttons[name];
     // Button background
     ctx.fillStyle = b.active ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.15)";
     ctx.strokeStyle = b.active ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.4)";
@@ -259,6 +352,14 @@ function drawTouchButtons() {
   ctx.restore();
 }
 
+function drawTouchButtons() {
+  if (!isTouchDevice || scene !== "game") return;
+  drawTouchButtonSet(touchButtons, "P1");
+  if (settings.mode === 2) {
+    drawTouchButtonSet(touchButtons2, "P2");
+  }
+}
+
 // ===== COURSES =====
 const COURSES = {
   CITY: { name:"CITY", lapDistance:3000, roadWidth:200, maxSpeed:8, accel:0.15, friction:0.03, brake:0.20, offRoadFactor:0.95, bgColor:"#1a1a2e", roadColor:"#333333", stripeColor:"#ffcc00", sideColor:"#0f3460", cpuBaseSpeed:5.5 },
@@ -269,15 +370,15 @@ const courseKeys = ["CITY","DESERT","SNOW"];
 
 // ===== SCENE =====
 let scene = "title";
-let settings = { mode: 0, course: 0, items: 1 }; // mode: 0=time attack, 1=cpu race
+let settings = { mode: 0, course: 0, items: 1 }; // mode: 0=time attack, 1=cpu race, 2=2p battle
 let settingSel = 0;
-const modeNames = ["TIME ATTACK", "CPU RACE"];
+const modeNames = ["TIME ATTACK", "CPU RACE", "2P BATTLE"];
 const itemNames = ["OFF", "ON"];
 
 // ===== GAME STATE =====
-let course, player, cpuCars, itemBoxes, bananas, shells;
-let countdown, countdownTimer, gameTime, lapTimes, raceFinished;
-let sceneryObjs, stripeOffset;
+let course, player, player2, cpuCars, itemBoxes, bananas, shells;
+let countdown, countdownTimer, gameTime, lapTimes, lapTimes2, raceFinished;
+let sceneryObjs, stripeOffset, stripeOffset2;
 let resultData;
 
 // ===== TITLE =====
@@ -349,19 +450,20 @@ function drawTitle() {
 
 // ===== SETTINGS =====
 function updateSettings() {
+  const modeCount = modeNames.length;
   if (keys["ArrowUp"] && !keys._upLock) { settingSel = (settingSel - 1 + 3) % 3; keys._upLock = true; }
   if (!keys["ArrowUp"]) keys._upLock = false;
   if (keys["ArrowDown"] && !keys._downLock) { settingSel = (settingSel + 1) % 3; keys._downLock = true; }
   if (!keys["ArrowDown"]) keys._downLock = false;
   if (keys["ArrowLeft"] && !keys._leftLock) {
-    if (settingSel === 0) settings.mode = (settings.mode - 1 + 2) % 2;
+    if (settingSel === 0) settings.mode = (settings.mode - 1 + modeCount) % modeCount;
     if (settingSel === 1) settings.course = (settings.course - 1 + 3) % 3;
     if (settingSel === 2) settings.items = 1 - settings.items;
     keys._leftLock = true;
   }
   if (!keys["ArrowLeft"]) keys._leftLock = false;
   if (keys["ArrowRight"] && !keys._rightLock) {
-    if (settingSel === 0) settings.mode = (settings.mode + 1) % 2;
+    if (settingSel === 0) settings.mode = (settings.mode + 1) % modeCount;
     if (settingSel === 1) settings.course = (settings.course + 1) % 3;
     if (settingSel === 2) settings.items = 1 - settings.items;
     keys._rightLock = true;
@@ -403,6 +505,13 @@ function drawSettings() {
   ctx.fillRect(W/2 - 80, 410, 20, 40);
   ctx.fillRect(W/2 + 60, 410, 20, 40);
 
+  // 2P mode info
+  if (settings.mode === 2) {
+    ctx.fillStyle = "#88ccff";
+    ctx.font = "12px monospace";
+    ctx.fillText("P1: Arrows+Space  P2: WASD+E", W/2, 395);
+  }
+
   // START button (touch-friendly)
   ctx.fillStyle = "rgba(255,204,0,0.3)";
   ctx.fillRect(W/2 - 80, 452, 160, 28);
@@ -424,15 +533,33 @@ function initGame() {
     finished: false, finishTime: 0
   };
   lapTimes = [];
+  lapTimes2 = [];
   gameTime = 0;
   raceFinished = false;
   countdown = 4; // 3,2,1,GO
   countdownTimer = 0;
   stripeOffset = 0;
+  stripeOffset2 = 0;
   itemBoxes = [];
   bananas = [];
   shells = [];
   cpuCars = [];
+  player2 = null;
+
+  // Rebuild touch buttons for 2P mode (adjust P1 buttons to bottom half)
+  if (settings.mode === 2) {
+    const halfH = H / 2;
+    touchButtons = {
+      left:  { x: 20,  y: H - 90, w: 70, h: 70, key: "ArrowLeft",  label: "\u25C0", active: false },
+      right: { x: 100, y: H - 90, w: 70, h: 70, key: "ArrowRight", label: "\u25B6", active: false },
+      accel: { x: W - 90, y: H - 160, w: 70, h: 70, key: "ArrowUp",   label: "\u25B2", active: false },
+      brake: { x: W - 90, y: H - 80,  w: 70, h: 70, key: "ArrowDown", label: "\u25BC", active: false },
+      item:  { x: W/2 - 40, y: H - 90, w: 80, h: 60, key: "Space",    label: "ITEM", active: false }
+    };
+    touchButtons2 = makeTouchButtons2();
+  } else {
+    touchButtons = makeTouchButtons();
+  }
 
   // scenery
   sceneryObjs = [];
@@ -458,7 +585,7 @@ function initGame() {
     }
   }
 
-  // CPU cars
+  // CPU cars (only for CPU RACE mode)
   if (settings.mode === 1) {
     const colors = [["#2266ff","#88bbff"],["#22cc44","#aaffaa"],["#cc66ff","#eeccff"]];
     const skills = [0.8, 0.6, 0.4];
@@ -472,6 +599,16 @@ function initGame() {
         item: null, finished: false, finishTime: 0
       });
     }
+  }
+
+  // Player 2 (only for 2P BATTLE mode)
+  if (settings.mode === 2) {
+    player2 = {
+      x: W/2, y: H - 100, speed: 0, distance: 0, lap: 0,
+      item: null, slip: 0, spin: 0, spinAngle: 0,
+      width: 28, height: 44, color: "#2266ff", accent: "#88ccff",
+      finished: false, finishTime: 0
+    };
   }
 
   resultData = null;
@@ -614,6 +751,52 @@ function drawShell(bx, by) {
   ctx.fillRect(bx-2, by-6, 2, 12);
 }
 
+// ===== Helper: Update a single player's physics =====
+function updatePlayerPhysics(p, inputKeys, isP2) {
+  if (p.finished) return;
+
+  const leftKey = isP2 ? "left" : "ArrowLeft";
+  const rightKey = isP2 ? "right" : "ArrowRight";
+  const upKey = isP2 ? "up" : "ArrowUp";
+  const downKey = isP2 ? "down" : "ArrowDown";
+  const itemKey = isP2 ? "item" : "Space";
+  const ownerTag = isP2 ? "player2" : "player";
+
+  const onRoad = Math.abs(p.x - W/2) < course.roadWidth/2;
+  if (p.slip > 0) {
+    p.slip--;
+    p.speed *= 0.97;
+    p.x += Math.sin(p.slip * 0.5) * 3;
+  } else if (p.spin > 0) {
+    p.spin--;
+    p.spinAngle += 0.3;
+    p.speed *= 0.95;
+  } else {
+    if (inputKeys[leftKey]) p.x -= 4;
+    if (inputKeys[rightKey]) p.x += 4;
+    if (inputKeys[upKey]) p.speed = Math.min(p.speed + course.accel, course.maxSpeed);
+    else if (inputKeys[downKey]) p.speed = Math.max(p.speed - course.brake, 0);
+    else p.speed = Math.max(p.speed - course.friction, 0);
+
+    if (!onRoad) p.speed *= course.offRoadFactor;
+  }
+
+  // item use
+  if (inputKeys[itemKey] && p.item && p.slip === 0 && p.spin === 0) {
+    if (p.item === "banana") {
+      bananas.push({ distance: p.distance - 40, x: p.x, width: 16, height: 10, owner: ownerTag });
+      p.item = null;
+    } else if (p.item === "shell") {
+      shells.push({ distance: p.distance + 60, x: p.x, speed: 10, width: 16, height: 16, owner: ownerTag });
+      p.item = null;
+    }
+    inputKeys[itemKey] = false;
+  }
+
+  p.x = Math.max(40, Math.min(W - 40, p.x));
+  p.distance += p.speed;
+}
+
 // ===== GAME UPDATE =====
 function updateGame(dt) {
   // Countdown
@@ -629,43 +812,11 @@ function updateGame(dt) {
   if (raceFinished) return;
   gameTime += dt;
 
-  // Player input
+  // Player 1 input
+  updatePlayerPhysics(player, keys, false);
+
+  // P1 lap check
   if (!player.finished) {
-    const onRoad = Math.abs(player.x - W/2) < course.roadWidth/2;
-    if (player.slip > 0) {
-      player.slip--;
-      player.speed *= 0.97;
-      player.x += Math.sin(player.slip * 0.5) * 3;
-    } else if (player.spin > 0) {
-      player.spin--;
-      player.spinAngle += 0.3;
-      player.speed *= 0.95;
-    } else {
-      if (keys["ArrowLeft"]) player.x -= 4;
-      if (keys["ArrowRight"]) player.x += 4;
-      if (keys["ArrowUp"]) player.speed = Math.min(player.speed + course.accel, course.maxSpeed);
-      else if (keys["ArrowDown"]) player.speed = Math.max(player.speed - course.brake, 0);
-      else player.speed = Math.max(player.speed - course.friction, 0);
-
-      if (!onRoad) player.speed *= course.offRoadFactor;
-    }
-
-    // item use
-    if (keys["Space"] && player.item && player.slip === 0 && player.spin === 0) {
-      if (player.item === "banana") {
-        bananas.push({ distance: player.distance - 40, x: player.x, width: 16, height: 10, owner: "player" });
-        player.item = null;
-      } else if (player.item === "shell") {
-        shells.push({ distance: player.distance + 60, x: player.x, speed: 10, width: 16, height: 16, owner: "player" });
-        player.item = null;
-      }
-      keys["Space"] = false;
-    }
-
-    player.x = Math.max(40, Math.min(W - 40, player.x));
-    player.distance += player.speed;
-
-    // lap check
     const newLap = Math.floor(player.distance / course.lapDistance);
     if (newLap > player.lap) {
       if (player.lap > 0 || newLap === 1) {
@@ -676,6 +827,36 @@ function updateGame(dt) {
         player.finished = true;
         player.finishTime = gameTime;
       }
+    }
+  }
+
+  // Player 2 update (2P mode)
+  if (settings.mode === 2 && player2) {
+    updatePlayerPhysics(player2, keys2, true);
+
+    // P2 lap check
+    if (!player2.finished) {
+      const newLap2 = Math.floor(player2.distance / course.lapDistance);
+      if (newLap2 > player2.lap) {
+        if (player2.lap > 0 || newLap2 === 1) {
+          lapTimes2.push(gameTime - lapTimes2.reduce((a,b) => a+b, 0));
+        }
+        player2.lap = newLap2;
+        if (player2.lap >= 3) {
+          player2.finished = true;
+          player2.finishTime = gameTime;
+        }
+      }
+    }
+
+    // P1 vs P2 collision (push + slow)
+    const relD12 = Math.abs(player.distance - player2.distance);
+    if (relD12 < 30 && Math.abs(player.x - player2.x) < 28) {
+      const pushX = Math.sign(player.x - player2.x) * 3;
+      player.x += pushX;
+      player2.x -= pushX;
+      player.speed *= 0.92;
+      player2.speed *= 0.92;
     }
   }
 
@@ -769,13 +950,17 @@ function updateGame(dt) {
   }
 
   // Collision: player vs item boxes
+  const allPlayers = settings.mode === 2 ? [player, player2] : [player];
   for (const box of itemBoxes) {
     if (!box.active) continue;
-    const relD = Math.abs(box.distance - player.distance);
-    if (relD < 20 && Math.abs(box.x - player.x) < 24 && !player.item) {
-      box.active = false;
-      box.respawnTimer = 5;
-      player.item = Math.random() < 0.5 ? "banana" : "shell";
+    for (const p of allPlayers) {
+      if (!box.active) break;
+      const relD = Math.abs(box.distance - p.distance);
+      if (relD < 20 && Math.abs(box.x - p.x) < 24 && !p.item) {
+        box.active = false;
+        box.respawnTimer = 5;
+        p.item = Math.random() < 0.5 ? "banana" : "shell";
+      }
     }
     // cpu pickup
     for (const cpu of cpuCars) {
@@ -789,13 +974,16 @@ function updateGame(dt) {
     }
   }
 
-  // Collision: player vs banana
+  // Collision: players vs banana
   bananas = bananas.filter(b => {
-    const relD = Math.abs(b.distance - player.distance);
-    if (relD < 18 && Math.abs(b.x - player.x) < 20 && player.slip === 0 && player.spin === 0) {
-      player.slip = 60;
-      player.speed *= 0.5;
-      return false;
+    for (const p of allPlayers) {
+      const relD = Math.abs(b.distance - p.distance);
+      const ownerTag = p === player ? "player" : "player2";
+      if (relD < 18 && Math.abs(b.x - p.x) < 20 && p.slip === 0 && p.spin === 0) {
+        p.slip = 60;
+        p.speed *= 0.5;
+        return false;
+      }
     }
     for (const cpu of cpuCars) {
       const rd = Math.abs(b.distance - cpu.distance);
@@ -810,12 +998,15 @@ function updateGame(dt) {
 
   // Collision: cars vs shell
   shells = shells.filter(sh => {
-    const relDP = Math.abs(sh.distance - player.distance);
-    if (relDP < 20 && Math.abs(sh.x - player.x) < 22 && player.spin === 0 && sh.owner !== "player") {
-      player.spin = 45;
-      player.spinAngle = 0;
-      player.speed *= 0.3;
-      return false;
+    for (const p of allPlayers) {
+      const ownerTag = p === player ? "player" : "player2";
+      const relDP = Math.abs(sh.distance - p.distance);
+      if (relDP < 20 && Math.abs(sh.x - p.x) < 22 && p.spin === 0 && sh.owner !== ownerTag) {
+        p.spin = 45;
+        p.spinAngle = 0;
+        p.speed *= 0.3;
+        return false;
+      }
     }
     for (const cpu of cpuCars) {
       const rd = Math.abs(sh.distance - cpu.distance);
@@ -857,30 +1048,260 @@ function updateGame(dt) {
   }
 
   // Check race finish
-  const allCars = [player, ...cpuCars];
-  const allFinished = settings.mode === 1 ? allCars.every(c => c.finished) : player.finished;
-  if (player.finished && !raceFinished) {
-    // Ensure final lap time
-    if (lapTimes.length < 3) {
-      lapTimes.push(gameTime - lapTimes.reduce((a,b) => a+b, 0));
-    }
-    // Calculate position
-    let position = 1;
-    if (settings.mode === 1) {
-      for (const cpu of cpuCars) {
-        if (cpu.finished && cpu.finishTime < player.finishTime) position++;
-        else if (!cpu.finished && cpu.distance > player.distance) position++;
+  if (settings.mode === 2) {
+    // 2P mode: either player finishes 3 laps => race ends
+    if ((player.finished || (player2 && player2.finished)) && !raceFinished) {
+      // Ensure final lap times
+      if (player.finished && lapTimes.length < 3) {
+        lapTimes.push(gameTime - lapTimes.reduce((a,b) => a+b, 0));
       }
+      if (player2 && player2.finished && lapTimes2.length < 3) {
+        lapTimes2.push(gameTime - lapTimes2.reduce((a,b) => a+b, 0));
+      }
+      // Determine winner
+      let winner = "";
+      if (player.finished && (!player2 || !player2.finished)) winner = "P1";
+      else if (!player.finished && player2 && player2.finished) winner = "P2";
+      else if (player.finished && player2 && player2.finished) {
+        winner = player.finishTime <= player2.finishTime ? "P1" : "P2";
+      }
+      resultData = {
+        lapTimes, lapTimes2,
+        totalTime: player.finished ? player.finishTime : gameTime,
+        totalTime2: player2 && player2.finished ? player2.finishTime : gameTime,
+        winner, position: 0
+      };
+      raceFinished = true;
     }
-    resultData = { lapTimes, totalTime: player.finishTime, position };
-    raceFinished = true;
+  } else {
+    const allCars = [player, ...cpuCars];
+    if (player.finished && !raceFinished) {
+      // Ensure final lap time
+      if (lapTimes.length < 3) {
+        lapTimes.push(gameTime - lapTimes.reduce((a,b) => a+b, 0));
+      }
+      // Calculate position
+      let position = 1;
+      if (settings.mode === 1) {
+        for (const cpu of cpuCars) {
+          if (cpu.finished && cpu.finishTime < player.finishTime) position++;
+          else if (!cpu.finished && cpu.distance > player.distance) position++;
+        }
+      }
+      resultData = { lapTimes, totalTime: player.finishTime, position };
+      raceFinished = true;
+    }
   }
 
   stripeOffset = (player.distance * 2) % 40;
+  if (player2) stripeOffset2 = (player2.distance * 2) % 40;
 }
 
-// ===== GAME DRAW =====
+// ===== GAME DRAW (single player view) =====
+function drawGameView(viewPlayer, otherEntities, viewY, viewH, playerLabel) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, viewY, W, viewH);
+  ctx.clip();
+
+  // Background
+  ctx.fillStyle = course.bgColor;
+  ctx.fillRect(0, viewY, W, viewH);
+
+  const localH = viewH;
+  const baseY = viewY + localH - 80; // player car position from bottom of this view
+  const currentStripeOffset = (viewPlayer.distance * 2) % 40;
+
+  // Road
+  const rw = course.roadWidth;
+  const roadL = W/2 - rw/2;
+  const roadR = W/2 + rw/2;
+  ctx.fillStyle = course.roadColor;
+  ctx.fillRect(roadL, viewY, rw, viewH);
+
+  // Side strips
+  for (let i = -1; i < Math.ceil(viewH / 40) + 2; i++) {
+    const y = viewY + (i * 40) - currentStripeOffset;
+    if (y < viewY - 40 || y > viewY + viewH + 20) continue;
+    const ci = Math.floor((viewPlayer.distance / 20 + i) % 2);
+    ctx.fillStyle = ci === 0 ? course.stripeColor : "#ffffff";
+    ctx.fillRect(roadL - 8, y, 8, 20);
+    ctx.fillRect(roadR, y, 8, 20);
+  }
+
+  // Dash lines
+  ctx.fillStyle = "#ffffff88";
+  for (let i = -1; i < Math.ceil(viewH / 40) + 2; i++) {
+    const y = viewY + (i * 40) - currentStripeOffset;
+    if (y < viewY - 40 || y > viewY + viewH + 20) continue;
+    ctx.fillRect(W/2 - 1, y, 2, 18);
+  }
+
+  // Start/finish line
+  for (let lap = 0; lap <= 3; lap++) {
+    const fd = lap * course.lapDistance - viewPlayer.distance;
+    const screenY = baseY - fd * 2;
+    if (screenY > viewY - 10 && screenY < viewY + viewH) {
+      ctx.fillStyle = "#fff";
+      for (let ci = 0; ci < rw/10; ci++) {
+        for (let ri = 0; ri < 2; ri++) {
+          if ((ci + ri) % 2 === 0) {
+            ctx.fillRect(roadL + ci * 10, screenY + ri * 5, 10, 5);
+          }
+        }
+      }
+    }
+  }
+
+  // Scenery objects
+  for (const obj of sceneryObjs) {
+    let objDist = obj.distance % course.lapDistance;
+    let relDist = objDist - (viewPlayer.distance % course.lapDistance);
+    if (relDist > course.lapDistance / 2) relDist -= course.lapDistance;
+    if (relDist < -course.lapDistance / 2) relDist += course.lapDistance;
+    const screenY = baseY - relDist * 2;
+    if (screenY < viewY - 60 || screenY > viewY + viewH + 20) continue;
+    const sx = obj.side > 0 ? roadR + 10 + obj.offset : roadL - 10 - obj.offset;
+    drawSceneryObj(sx, screenY, obj.type, course.name);
+  }
+
+  // Item boxes
+  for (const box of itemBoxes) {
+    if (!box.active) continue;
+    const relD = box.distance - viewPlayer.distance;
+    const screenY = baseY - relD * 2;
+    if (screenY < viewY - 20 || screenY > viewY + viewH + 20) continue;
+    drawItemBox(box.x, screenY);
+  }
+
+  // Bananas
+  for (const b of bananas) {
+    const relD = b.distance - viewPlayer.distance;
+    const screenY = baseY - relD * 2;
+    if (screenY < viewY - 20 || screenY > viewY + viewH + 20) continue;
+    drawBanana(b.x, screenY);
+  }
+
+  // Shells
+  for (const sh of shells) {
+    const relD = sh.distance - viewPlayer.distance;
+    const screenY = baseY - relD * 2;
+    if (screenY < viewY - 20 || screenY > viewY + viewH + 20) continue;
+    drawShell(sh.x, screenY);
+  }
+
+  // Draw other entities (other player, CPU cars) relative to this view
+  for (const ent of otherEntities) {
+    const relD = ent.distance - viewPlayer.distance;
+    const screenY = baseY - relD * 2;
+    if (screenY < viewY - 40 || screenY > viewY + viewH + 40) continue;
+    let angle = 0;
+    if (ent.spin > 0) angle = ent.spinAngle;
+    let cx = ent.x;
+    if (ent.slip > 0) cx += Math.sin(ent.slip * 0.5) * 3;
+    drawCarSprite(cx, screenY, ent.color, ent.accent, angle, 1);
+  }
+
+  // Draw the view's own player car
+  {
+    let angle = 0;
+    if (viewPlayer.spin > 0) angle = viewPlayer.spinAngle;
+    let px = viewPlayer.x;
+    if (viewPlayer.slip > 0) px += Math.sin(viewPlayer.slip * 0.5) * 4;
+    drawCarSprite(px, baseY, viewPlayer.color, viewPlayer.accent, angle, 1);
+    // exhaust particles when accelerating
+    if (viewPlayer.speed > 2 && viewPlayer.spin === 0) {
+      ctx.fillStyle = "#aaa";
+      for (let i = 0; i < 3; i++) {
+        const ex = px + (Math.random()-0.5)*8;
+        const ey = baseY + 24 + Math.random() * 8;
+        ctx.fillRect(ex, ey, 3, 3);
+      }
+    }
+  }
+
+  // HUD for this view
+  const hudY = viewY;
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
+  ctx.fillRect(0, hudY, W, 30);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 13px monospace";
+  ctx.textAlign = "left";
+  const currentLap = Math.min(viewPlayer.lap + 1, 3);
+  ctx.fillStyle = playerLabel === "P1" ? "#ff6666" : "#6688ff";
+  ctx.fillText(playerLabel, 8, hudY + 20);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(" LAP " + currentLap + "/3", 30, hudY + 20);
+  ctx.textAlign = "center";
+  ctx.fillText("TIME " + formatTime(gameTime), W/2, hudY + 20);
+  ctx.textAlign = "right";
+  ctx.fillText(Math.floor(viewPlayer.speed * 30) + " km/h", W - 8, hudY + 20);
+
+  // Item display
+  if (viewPlayer.item) {
+    ctx.fillStyle = "#ffcc00";
+    ctx.font = "bold 11px monospace";
+    ctx.textAlign = "left";
+    ctx.fillText("ITEM:" + viewPlayer.item.toUpperCase(), 8, hudY + 30 + 14);
+  }
+
+  ctx.restore();
+}
+
 function drawGame() {
+  if (settings.mode === 2 && player2) {
+    // ===== 2P SPLIT SCREEN =====
+    const halfH = Math.floor(H / 2);
+
+    // P2 view (top half) - P2's perspective
+    const p2Entities = [player]; // P2 sees P1
+    drawGameView(player2, p2Entities, 0, halfH, "P2");
+
+    // P1 view (bottom half) - P1's perspective
+    const p1Entities = [player2]; // P1 sees P2
+    drawGameView(player, p1Entities, halfH, halfH, "P1");
+
+    // Divider line
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.fillRect(0, halfH - 1, W, 2);
+
+    // Countdown (centered on screen, over divider)
+    if (countdown > 0) {
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = countdown === 1 ? "#ffcc00" : "#fff";
+      ctx.font = "bold 80px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const txt = countdown > 1 ? (countdown - 1).toString() : "GO!";
+      const scale = 1 + countdownTimer * 0.3;
+      ctx.save();
+      ctx.translate(W/2, H/2);
+      ctx.scale(scale, scale);
+      ctx.fillText(txt, 0, 0);
+      ctx.restore();
+      ctx.textBaseline = "alphabetic";
+    }
+
+    // Race finished overlay
+    if (raceFinished && !enterPressed) {
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#ffcc00";
+      ctx.font = "bold 48px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("FINISH!", W/2, H/2 - 20);
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 20px monospace";
+      ctx.fillText("PRESS ENTER FOR RESULTS", W/2, H/2 + 30);
+    }
+
+    // Draw touch buttons on top
+    drawTouchButtons();
+    return;
+  }
+
+  // ===== Normal (1P) draw =====
   // Background
   ctx.fillStyle = course.bgColor;
   ctx.fillRect(0, 0, W, H);
@@ -909,7 +1330,6 @@ function drawGame() {
   }
 
   // Start/finish line
-  const finishLineDist = 0;
   for (let lap = 0; lap <= 3; lap++) {
     const fd = lap * course.lapDistance - player.distance;
     const screenY = H - 100 - fd * 2;
@@ -927,10 +1347,7 @@ function drawGame() {
 
   // Scenery objects
   for (const obj of sceneryObjs) {
-    // Wrap distance to total race distance
-    const totalDist = course.lapDistance * 3;
     let objDist = obj.distance % course.lapDistance;
-    // Show relative to player within current lap scope
     let relDist = objDist - (player.distance % course.lapDistance);
     if (relDist > course.lapDistance / 2) relDist -= course.lapDistance;
     if (relDist < -course.lapDistance / 2) relDist += course.lapDistance;
@@ -1124,35 +1541,91 @@ function drawResult() {
   ctx.fillStyle = "#0a0a2e";
   ctx.fillRect(0, 0, W, H);
 
-  ctx.fillStyle = "#ffcc00";
-  ctx.font = "bold 40px monospace";
-  ctx.textAlign = "center";
-  ctx.fillText("RESULTS", W/2, 70);
-
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 20px monospace";
-  ctx.fillText("COURSE: " + course.name, W/2, 120);
-
-  if (resultData) {
-    for (let i = 0; i < resultData.lapTimes.length; i++) {
-      ctx.fillStyle = "#ccc";
-      ctx.font = "18px monospace";
-      ctx.fillText("LAP " + (i+1) + ": " + formatTime(resultData.lapTimes[i]), W/2, 170 + i * 35);
-    }
+  if (settings.mode === 2 && resultData) {
+    // 2P BATTLE results
     ctx.fillStyle = "#ffcc00";
-    ctx.font = "bold 24px monospace";
-    ctx.fillText("TOTAL: " + formatTime(resultData.totalTime), W/2, 300);
+    ctx.font = "bold 36px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("RESULTS", W/2, 50);
 
-    if (settings.mode === 1) {
-      ctx.fillStyle = resultData.position === 1 ? "#ffcc00" : "#fff";
-      ctx.font = "bold 30px monospace";
-      ctx.fillText(resultData.position + getSuffix(resultData.position) + " PLACE!", W/2, 360);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 18px monospace";
+    ctx.fillText("COURSE: " + course.name, W/2, 80);
+
+    // Winner announcement
+    ctx.fillStyle = "#ffcc00";
+    ctx.font = "bold 32px monospace";
+    if (resultData.winner) {
+      ctx.fillText(resultData.winner + " WINS!", W/2, 120);
+    }
+
+    // P1 results (left side or top)
+    const colX1 = W / 4;
+    const colX2 = W * 3 / 4;
+
+    // P1
+    ctx.fillStyle = "#ff6666";
+    ctx.font = "bold 20px monospace";
+    ctx.fillText("P1", colX1, 160);
+    ctx.fillStyle = "#ccc";
+    ctx.font = "16px monospace";
+    for (let i = 0; i < resultData.lapTimes.length; i++) {
+      ctx.fillText("LAP " + (i+1) + ": " + formatTime(resultData.lapTimes[i]), colX1, 190 + i * 28);
+    }
+    ctx.fillStyle = player.finished ? "#ffcc00" : "#888";
+    ctx.font = "bold 18px monospace";
+    ctx.fillText(player.finished ? formatTime(resultData.totalTime) : "DNF", colX1, 280);
+
+    // P2
+    ctx.fillStyle = "#6688ff";
+    ctx.font = "bold 20px monospace";
+    ctx.fillText("P2", colX2, 160);
+    ctx.fillStyle = "#ccc";
+    ctx.font = "16px monospace";
+    for (let i = 0; i < resultData.lapTimes2.length; i++) {
+      ctx.fillText("LAP " + (i+1) + ": " + formatTime(resultData.lapTimes2[i]), colX2, 190 + i * 28);
+    }
+    ctx.fillStyle = player2 && player2.finished ? "#ffcc00" : "#888";
+    ctx.font = "bold 18px monospace";
+    ctx.fillText(player2 && player2.finished ? formatTime(resultData.totalTime2) : "DNF", colX2, 280);
+
+    // Cars
+    drawCarSprite(colX1, 320, "#ff2222", "#ffcc00", 0, 1.2);
+    drawCarSprite(colX2, 320, "#2266ff", "#88ccff", 0, 1.2);
+
+  } else {
+    // Normal result
+    ctx.fillStyle = "#ffcc00";
+    ctx.font = "bold 40px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("RESULTS", W/2, 70);
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 20px monospace";
+    ctx.fillText("COURSE: " + course.name, W/2, 120);
+
+    if (resultData) {
+      for (let i = 0; i < resultData.lapTimes.length; i++) {
+        ctx.fillStyle = "#ccc";
+        ctx.font = "18px monospace";
+        ctx.fillText("LAP " + (i+1) + ": " + formatTime(resultData.lapTimes[i]), W/2, 170 + i * 35);
+      }
+      ctx.fillStyle = "#ffcc00";
+      ctx.font = "bold 24px monospace";
+      ctx.fillText("TOTAL: " + formatTime(resultData.totalTime), W/2, 300);
+
+      if (settings.mode === 1) {
+        ctx.fillStyle = resultData.position === 1 ? "#ffcc00" : "#fff";
+        ctx.font = "bold 30px monospace";
+        ctx.fillText(resultData.position + getSuffix(resultData.position) + " PLACE!", W/2, 360);
+      }
     }
   }
 
   if (Math.floor(Date.now()/500) % 2 === 0) {
     ctx.fillStyle = "#888";
     ctx.font = "16px monospace";
+    ctx.textAlign = "center";
     ctx.fillText("PRESS ENTER / TAP", W/2, 440);
   }
 }
